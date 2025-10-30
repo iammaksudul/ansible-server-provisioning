@@ -1,0 +1,104 @@
+---
+- name: Install essential packages (Ubuntu/Debian)
+  apt:
+    name:
+      - curl
+      - wget
+      - vim
+      - htop
+      - git
+      - unzip
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install essential packages (CentOS/RHEL)
+  yum:
+    name:
+      - curl
+      - wget
+      - vim
+      - htop
+      - git
+      - unzip
+      - yum-utils
+      - device-mapper-persistent-data
+      - lvm2
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Create devops user
+  user:
+    name: devops
+    groups: sudo
+    shell: /bin/bash
+    create_home: yes
+    state: present
+
+- name: Add SSH key for devops user
+  authorized_key:
+    user: devops
+    state: present
+    key: "{{ devops_ssh_key | default('ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC...') }}"
+
+- name: Configure sudo for devops user
+  lineinfile:
+    path: /etc/sudoers.d/devops
+    line: 'devops ALL=(ALL) NOPASSWD:ALL'
+    create: yes
+    mode: '0440'
+
+- name: Configure SSH security
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backup: yes
+  loop:
+    - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+    - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+    - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+    - { regexp: '^#?Port', line: 'Port 22' }
+  notify: restart ssh
+
+- name: Configure firewall (UFW)
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - '22'
+    - '80'
+    - '443'
+  when: ansible_os_family == "Debian"
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+  when: ansible_os_family == "Debian"
+
+- name: Set timezone
+  timezone:
+    name: "{{ server_timezone | default('UTC') }}"
+
+- name: Configure NTP
+  package:
+    name: ntp
+    state: present
+
+- name: Start and enable NTP
+  service:
+    name: ntp
+    state: started
+    enabled: yes
+  when: ansible_os_family == "Debian"
+
+- name: Configure log rotation
+  template:
+    src: logrotate.conf.j2
+    dest: /etc/logrotate.d/custom
+    mode: '0644'

@@ -1,0 +1,55 @@
+---
+- name: Configure all servers
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Update package cache (Ubuntu/Debian)
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+    
+    - name: Update package cache (CentOS/RHEL)
+      yum:
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+
+  roles:
+    - common
+
+- name: Configure web servers
+  hosts: webservers
+  become: yes
+  roles:
+    - webserver
+
+- name: Configure database servers
+  hosts: databases
+  become: yes
+  roles:
+    - database
+
+- name: Post-deployment tasks
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure all services are started and enabled
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - ssh
+        - cron
+      ignore_errors: yes
+
+    - name: Display server information
+      debug:
+        msg: |
+          Server: {{ inventory_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          IP: {{ ansible_default_ipv4.address }}
+          Memory: {{ ansible_memtotal_mb }}MB
+          CPU: {{ ansible_processor_vcpus }} cores

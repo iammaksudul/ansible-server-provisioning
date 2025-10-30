@@ -1,0 +1,64 @@
+---
+- name: Install Nginx
+  package:
+    name: nginx
+    state: present
+
+- name: Create web directory
+  file:
+    path: /var/www/html
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Deploy custom index page
+  template:
+    src: index.html.j2
+    dest: /var/www/html/index.html
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Configure Nginx virtual host
+  template:
+    src: nginx-site.conf.j2
+    dest: /etc/nginx/sites-available/default
+    backup: yes
+  notify: restart nginx
+
+- name: Remove default Nginx page
+  file:
+    path: /var/www/html/index.nginx-debian.html
+    state: absent
+
+- name: Test Nginx configuration
+  command: nginx -t
+  register: nginx_test
+  changed_when: false
+
+- name: Start and enable Nginx
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Install SSL certificate (Let's Encrypt)
+  block:
+    - name: Install certbot
+      package:
+        name: certbot
+        state: present
+    
+    - name: Install certbot nginx plugin
+      package:
+        name: python3-certbot-nginx
+        state: present
+      when: ansible_os_family == "Debian"
+  when: enable_ssl | default(false)
+
+- name: Configure log rotation for Nginx
+  template:
+    src: nginx-logrotate.j2
+    dest: /etc/logrotate.d/nginx
+    mode: '0644'
